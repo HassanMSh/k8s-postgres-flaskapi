@@ -434,8 +434,8 @@ This will return a URL. If you paste this to your browser you will see the hello
 
 ## References
 
-[RikKraanVatage GitHub Repo](https://github.com/RikKraanVantage/kubernetes-flask-mysql)
-[Theo Despoudis Article](https://sweetcode.io/how-to-use-kubernetes-to-deploy-postgres/)
-[Rik Kraan Article](https://www.kdnuggets.com/2021/02/deploy-flask-api-kubernetes-connect-micro-services.html)
-[Forketyfork](https://medium.com/swlh/how-to-run-locally-built-docker-images-in-kubernetes-b28fbc32cc1d)
++ [RikKraanVatage GitHub Repo](https://github.com/RikKraanVantage/kubernetes-flask-mysql)
++ [Theo Despoudis Article](https://sweetcode.io/how-to-use-kubernetes-to-deploy-postgres/)
++ [Rik Kraan Article](https://www.kdnuggets.com/2021/02/deploy-flask-api-kubernetes-connect-micro-services.html)
++ [Forketyfork](https://medium.com/swlh/how-to-run-locally-built-docker-images-in-kubernetes-b28fbc32cc1d)
 
