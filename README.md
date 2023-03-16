@@ -1,4 +1,4 @@
-# k8s-postgres-flaskapi
+# Postgress
 
 ## Prerequisites:
 
@@ -113,7 +113,7 @@
 	          ports:
 	            - containerPort: 5432
 	          env:
-	            - name: POSTGRES_PASSWORD
+	            - name: postgres-secret-config
 	              valueFrom:
 	                secretKeyRef:
 	                  name: postgres-secret-config
@@ -207,7 +207,7 @@
 	          ports:
 	            - containerPort: 5000
 	          env:
-	            - name: POSTGRES_PASSWORD
+	            - name: postgres-secret-config
 	              valueFrom:
 	                secretKeyRef:
 	                  name: postgres-secret-config
@@ -261,7 +261,7 @@ To configure the API based on specific usage, you wil have to create a local doc
 	
 	# PostgreSQL configurations
 	db_user = "postgres"
-	db_password = os.getenv("POSTGRES_PASSWORD")
+	db_password = os.getenv("postgres-secret-config")
 	db_name = os.getenv("db_name")
 	db_host = os.getenv("POSTGRES_SERVICE_HOST")
 	db_port = int(os.getenv("POSTGRES_SERVICE_PORT"))
@@ -399,16 +399,14 @@ To configure the API based on specific usage, you wil have to create a local doc
 
 	kubectl apply -f flask-service.yaml
 	kubectl apply -f flask-deployment.yaml
-	kubectl apply -f flask-deployment.yaml
 
 ## Expose the API
 
 The API can be accessed by exposing it using minikube: 
 
-	minikube service flask-service. 
+	minikube service flask-service
 
 This will return a URL. If you paste this to your browser you will see the hello world message. You can use this service_URL to make requests to the API
-
 
 ### Now you can use the API to CRUD your database
 
@@ -432,10 +430,58 @@ This will return a URL. If you paste this to your browser you will see the hello
 
 	curl -H "Content-Type: application/json" -d {"name": "<user_name>", "email": "<user_email>", "pwd": "<user_password>", "user_id": <user_id>} <service_URL>/update
 
+## Ingress configuration;
+
+### Enable the Ingress controller
+
+	minikube addons enable ingress
+
+### Verify that the NGINX Ingress controller is running
+
+	kubectl get pods -n ingress-nginx
+
+### Create an Ingress
+
+	nano flask-ingress.yaml
+
+	apiVersion: networking.k8s.io/v1
+	kind: Ingress
+	metadata:
+	  name: flask-ingress
+	spec:
+	  rules:
+	    - host: postgres.api
+	      http:
+	        paths:
+	          - path: /
+	            pathType: Prefix
+	            backend:
+	              service:
+	                name: flask-service
+	                port:
+	                  number: 5000
+
+### Verify the IP address is set:
+
+	kubectl get ingress
+
+You should see an IPv4 address in the ADDRESS column; for example:
+
+	NAME            CLASS   HOSTS          ADDRESS        PORTS   AGE
+	flask-ingress   nginx   postgres.api   192.168.49.2   80      59m
+
+### Add the following line to the bottom of the /etc/hosts file on your computer (you will need administrator access):
+
+	192.168.49.2	postgres.api
+
+### Verify that the Ingress controller is directing traffic:
+
+	curl postgres.api
+
 ## References
 
 + [RikKraanVatage GitHub Repo](https://github.com/RikKraanVantage/kubernetes-flask-mysql)
 + [Theo Despoudis Article](https://sweetcode.io/how-to-use-kubernetes-to-deploy-postgres/)
 + [Rik Kraan Article](https://www.kdnuggets.com/2021/02/deploy-flask-api-kubernetes-connect-micro-services.html)
 + [Forketyfork](https://medium.com/swlh/how-to-run-locally-built-docker-images-in-kubernetes-b28fbc32cc1d)
-
++ [Kubernetes Documentation](https://kubernetes.io/docs/home/)

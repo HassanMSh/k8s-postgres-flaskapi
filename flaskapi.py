@@ -6,7 +6,7 @@ app = Flask(__name__)
 
 # PostgreSQL configurations
 db_user = "postgres"
-db_password = "password"
+db_password = os.getenv("postgres-secret-config")
 db_name = os.getenv("db_name")
 db_host = os.getenv("POSTGRES_SERVICE_HOST")
 db_port = int(os.getenv("POSTGRES_SERVICE_PORT"))
@@ -48,7 +48,7 @@ def add_user():
 
 @app.route("/users", methods=["GET"])
 def users():
-    """Function to retrieve all users from the PostgreSQL database"""
+    """Function to retrieve all users from the PostgreSQL 	database"""
     try:
         conn = create_connection()
         cursor = conn.cursor()
@@ -64,7 +64,7 @@ def users():
 
 @app.route("/user/<int:user_id>", methods=["GET"])
 def user(user_id):
-    """Function to get information of a specific user in the PostgreSQL database"""
+    """Function to get information of a specific user in the 	PostgreSQL database"""
     try:
         conn = create_connection()
         cursor = conn.cursor()
@@ -86,7 +86,7 @@ def update_user():
     email = json["email"]
     pwd = json["pwd"]
     user_id = json["user_id"]
-    if name and email and pwd and user_id and request.method == "POST":
+    if name and email and pwd and user_id and request.method == 	"POST":
         sql = "UPDATE users SET user_name=%s, user_email=%s, " \
               "user_password=%s WHERE user_id=%s"
         data = (name, email, pwd, user_id)
