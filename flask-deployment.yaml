@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: flaskapi
-          image: flask-api
+          image: flask-3.8
           imagePullPolicy: Never
           ports:
             - containerPort: 5000
@@ -29,3 +29,10 @@ spec:
                   key: password
             - name: db_name
               value: flaskapi
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "250m"
+            limits:
+              memory: "128Mi"
+              cpu: "500m"

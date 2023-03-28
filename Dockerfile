@@ -1,12 +1,13 @@
-FROM python:3.6-slim
+FROM python:3.8-alpine
 
-RUN apt-get clean \
-    && apt-get -y update
-
-RUN apt-get -y install \
-    nginx \
-    python3-dev \
-    build-essential
+RUN apk update && apk upgrade && apk add \
+        nginx \
+        python3-dev \
+        build-base \
+        libffi-dev \
+        openssl-dev \
+        linux-headers \
+    && rm -rf /var/cache/apk/*
 
 WORKDIR /app
 

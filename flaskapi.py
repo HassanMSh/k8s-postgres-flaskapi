@@ -1,7 +1,9 @@
 import os
 from flask import jsonify, request, Flask
 from psycopg2 import connect
+from dotenv import load_dotenv
 
+load_dotenv()
 app = Flask(__name__)
 
 # PostgreSQL configurations
@@ -18,7 +20,7 @@ def create_connection():
 @app.route("/")
 def index():
     """Function to test the functionality of the API"""
-    return "Hello, world!"
+    return "Hello, world! :)"
 
 @app.route("/create", methods=["POST"])
 def add_user():
