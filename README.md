@@ -23,3 +23,7 @@ devspace use namespace my-namespace   # will be automatically created during dep
 ```
 devspace dev
 ```
+
+## Warning
+
+Note that since devspace uses python3.8+ and to read environmental variables, some files needed to be reconfigured and changed.
