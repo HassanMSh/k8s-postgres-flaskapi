@@ -1,457 +1,116 @@
-# Postgress
+# Securing Kubernetes with Oauth2-proxy
 
-## Prerequisites:
+## Prerequisits
 
-+ Ubuntu 22.04 LTS
-+ docker
-+ minikube
-+ kubectl
-+ Hardware Requirements:
-	* 4 CPUs or more
-	* 4GB of free memory
-	* 30GB of free disk space
-	* Internet connection
++ A running local kubernetes cluster using minikube
++ An application running inside that cluster with a FQDN
++ A Github account with sudo privilege
++ For Google OAuth2.0, a top level domain is required.
 
-## Create a secret:
+_Note that the FQDN I am using is local, I have edited my host files to make this possible_
 
-### Encrypt the password
+	$cat /etc/hosts
+	127.0.0.1       localhost
+	192.168.49.2    www.postgres.api ## minikube exposed service ip address
 
-	echo "password" | base64
+## Configure ingress and expose application service:
 
-### Copy output, then create a secrets config file and apply it on the cluster:
+	minikube addons enable ingress
+	minikube service flask-service
 
-	nano postgres-secrets.yaml
+## Create a custom GitHub OAuth application
 
-	apiVersion: v1
-	kind: Secret
-	metadata:
-	  name: postgres-secret-config
-	type: Opaque
-	data:
-	  password: cG9zdGdyZXM
++ Homepage URL is the FQDN in the Ingress rule, like https://www.postgres.api
++ Authorization callback URL is the same as the base FQDN plus /oauth2/callback, like https://www.postgres.api/oauth2 (we are using this) or https://www.postgres.api/oauth2/callback
 
-### Apply this config:
+## Configure oauth2_proxy values in the file oauth2-proxy.yaml with the values:
 
-	kubectl apply -f postgres-secrets.yaml
++ OAUTH2_PROXY_CLIENT_ID with the github <Client ID>
++ OAUTH2_PROXY_CLIENT_SECRET with the github <Client Secret>
++ OAUTH2_PROXY_COOKIE_SECRET with value of python -c 'import os,base64; print(base64.b64encode(os.urandom(16)).decode("ascii"))'
 
-## Create PersistentVolume and PersistentVolumeClaim
+### oauth2-proxy.yaml
 
-### First, we define the configuration for the PersistentVolume:
-
-	nano pv-volume.yaml
-
-	apiVersion: v1
-	kind: PersistentVolume
-	metadata:
-	  name: postgres-pv-volume
-	  labels:
-	    type: local
-	spec:
-	  storageClassName: manual
-	  capacity:
-	    storage: 5Gi
-	  accessModes:
-	    - ReadWriteOnce
-	  hostPath:
-	    path: "/mnt/data"
-
-### Apply it:
-
-	kubectl apply -f pv-volume.yaml
-
-### Follow up with a PersistentVolumeClaim configuration that matches the details of the previous manifest:
-
-	nano pv-claim.yaml
-
-	apiVersion: v1
-	kind: PersistentVolumeClaim
-	metadata:
-	  name: postgres-pv-claim
-	spec:
-	  storageClassName: manual
-	  accessModes:
-	    - ReadWriteOnce
-	  resources:
-	    requests:
-	      storage: 1Gi
-
-### Apply it
-
-	kubectl apply -f pv-claim.yaml
-
-## Create Deployment
-
-### Issue a deployment config:
-
-	nano postgres-deployment.yaml
-
-	---
 	apiVersion: apps/v1
 	kind: Deployment
 	metadata:
-	  name: postgres
 	  labels:
-	    app: postgres
+	    k8s-app: oauth2-proxy
+	  name: oauth2-proxy
+	  namespace: kube-system
 	spec:
 	  replicas: 1
 	  selector:
 	    matchLabels:
-	      app: postgres
+	      k8s-app: oauth2-proxy
 	  template:
 	    metadata:
 	      labels:
-	        app: postgres
+	        k8s-app: oauth2-proxy
 	    spec:
-	      volumes:
-	        - name: postgres-pv-storage
-	          persistentVolumeClaim:
-	            claimName: postgres-pv-claim
 	      containers:
-	        - name: postgres
-	          image: postgres:11
-	          imagePullPolicy: IfNotPresent
-	          ports:
-	            - containerPort: 5432
-	          env:
-	            - name: postgres-secret-config
-	              valueFrom:
-	                secretKeyRef:
-	                  name: postgres-secret-config
-	                  key: password
-	            - name: PGDATA
-	              value: /var/lib/postgresql/data/pgdata
-	          volumeMounts:
-	            - mountPath: /var/lib/postgresql/data
-	              name: postgres-pv-storage
-
-## Create Service
-
-### service manifest:
-
-	nano postgres-service.yaml
-
-	apiVersion: v1
-	kind: Service
-	metadata:
-	  name: postgres
-	  labels:
-	    app: postgres
-	spec:
-	  type: NodePort
-	  ports:
-	   - name: postgres-node-port
-	     port: 5432
-	     protocol: TCP
-	  selector:
-	    app: postgres
-
-### Apply service:
-
-	kubectl apply -f postgres-service.yaml
-
-## Access postgress CLI:
-
-	kubectl exec -it postgres-podID -- psql -U postgres
-
-## Create DB
-
-	CREATE DATABASE flaskapi;
-	\c flaskapi;
-	CREATE TABLE users ( user_id SERIAL PRIMARY KEY, user_name VARCHAR(255), user_email VARCHAR(255), user_password VARCHAR(255));
-
-## Create flask service and deployment
-
-### Flask service
-
-	nano flask-service.yaml
-
+	      - args:
+	        - --provider=github
+	        - --email-domain=*
+	        - --upstream=file:///dev/null
+	        - --http-address=0.0.0.0:4180
+	        ## this line was added because there's an issue with the latest version of OAuth-proxy
+	        - --scope=user:email
+	        env:
+	        - name: OAUTH2_PROXY_CLIENT_ID
+	          value: ClientID
+	        - name: OAUTH2_PROXY_CLIENT_SECRET
+	          value: ClientSecret
+	        # generate the coockie secret using docker run -ti --rm python:3-alpine python -c 'import secrets,base64; print(base64.b64encode(base64.b64encode(	secrets.token_bytes(16))));'
+	        - name: OAUTH2_PROXY_COOKIE_SECRET
+	          value: SECRET
+	        image: quay.io/oauth2-proxy/oauth2-proxy:latest
+	        imagePullPolicy: Always
+	        name: oauth2-proxy
+	        ports:
+	        - containerPort: 4180
+	          protocol: TCP
+	
 	---
+	
 	apiVersion: v1
 	kind: Service
 	metadata:
-	  name: flask-service
+	  labels:
+	    k8s-app: oauth2-proxy
+	  name: oauth2-proxy
+	  namespace: kube-system
 	spec:
 	  ports:
-	  - port: 5000
+	  - name: http
+	    port: 4180
 	    protocol: TCP
-	    targetPort: 5000
+	    targetPort: 4180
 	  selector:
-	    app: flaskapi
-	  type: LoadBalancer
+	    k8s-app: oauth2-proxy
 
-### Flask Deployment
+## Customize the application-ingress.yaml for your app:
 
-	nano flask-deployment.yaml
++ Replace __INGRESS_HOST__ with a valid FQDN and __INGRESS_SECRET__ with a Secret with a valid SSL certificate.
+
+### application-ingress.yaml:
 
 	---
-	apiVersion: apps/v1
-	kind: Deployment
-	metadata:
-	  name: flaskapi-deployment
-	  labels:
-	    app: flaskapi
-	spec:
-	  replicas: 3
-	  selector:
-	    matchLabels:
-	      app: flaskapi
-	  template:
-	    metadata:
-	      labels:
-	        app: flaskapi
-	    spec:
-	      containers:
-	        - name: flaskapi
-	          image: flask-api
-	          imagePullPolicy: Never
-	          ports:
-	            - containerPort: 5000
-	          env:
-	            - name: postgres-secret-config
-	              valueFrom:
-	                secretKeyRef:
-	                  name: postgres-secret-config
-	                  key: password
-	            - name: db_name
-	              value: flaskapi
-
-
-## Configure minikube to use local docker image
-
-	minikube docker-env
-	eval $(minikube -p minikube docker-env)
-
-## Create flask Image in docker
-
-To configure the API based on specific usage, you wil have to create a local docker image to use it as a pod.
-
-### Create a Dockerfile
-
-	nano Dockerfile
-
-	FROM python:3.6-slim
-	
-	RUN apt-get clean \
-	    && apt-get -y update
-	
-	RUN apt-get -y install \
-	    nginx \
-	    python3-dev \
-	    build-essential
-	
-	WORKDIR /app
-	
-	COPY requirements.txt /app/requirements.txt
-	RUN pip install -r requirements.txt --src /usr/local/src
-	
-	COPY . .
-	
-	EXPOSE 5000
-	CMD [ "python", "flaskapi.py" ]
-
-### Create flaskapi.py
-
-	nano flaskapi.py
-
-	import os
-	from flask import jsonify, request, Flask
-	from psycopg2 import connect
-	
-	app = Flask(__name__)
-	
-	# PostgreSQL configurations
-	db_user = "postgres"
-	db_password = os.getenv("postgres-secret-config")
-	db_name = os.getenv("db_name")
-	db_host = os.getenv("POSTGRES_SERVICE_HOST")
-	db_port = int(os.getenv("POSTGRES_SERVICE_PORT"))
-	
-	def create_connection():
-	    """Helper function to create a PostgreSQL connection"""
-	    return connect(user=db_user, password=db_password, dbname=db_name, host=db_host, port=db_port)
-	
-	@app.route("/")
-	def index():
-	    """Function to test the functionality of the API"""
-	    return "Hello, world!"
-	
-	@app.route("/create", methods=["POST"])
-	def add_user():
-	    """Function to create a user in the PostgreSQL database"""
-	    json = request.json
-	    name = json["name"]
-	    email = json["email"]
-	    pwd = json["pwd"]
-	    if name and email and pwd and request.method == "POST":
-	        sql = "INSERT INTO users(user_name, user_email, user_	password) " \
-	              "VALUES(%s, %s, %s)"
-	        data = (name, email, pwd)
-	        try:
-	            conn = create_connection()
-	            cursor = conn.cursor()
-	            cursor.execute(sql, data)
-	            conn.commit()
-	            cursor.close()
-	            conn.close()
-	            resp = jsonify("User created successfully!")
-	            resp.status_code = 200
-	            return resp
-	        except Exception as exception:
-	            return jsonify(str(exception))
-	    else:
-	        return jsonify("Please provide name, email and pwd")
-	
-	@app.route("/users", methods=["GET"])
-	def users():
-	    """Function to retrieve all users from the PostgreSQL 	database"""
-	    try:
-	        conn = create_connection()
-	        cursor = conn.cursor()
-	        cursor.execute("SELECT * FROM users")
-	        rows = cursor.fetchall()
-	        cursor.close()
-	        conn.close()
-	        resp = jsonify(rows)
-	        resp.status_code = 200
-	        return resp
-	    except Exception as exception:
-	        return jsonify(str(exception))
-	
-	@app.route("/user/<int:user_id>", methods=["GET"])
-	def user(user_id):
-	    """Function to get information of a specific user in the 	PostgreSQL database"""
-	    try:
-	        conn = create_connection()
-	        cursor = conn.cursor()
-	        cursor.execute("SELECT * FROM users WHERE user_id=%s", (	user_id,))
-	        row = cursor.fetchone()
-	        cursor.close()
-	        conn.close()
-	        resp = jsonify(row)
-	        resp.status_code = 200
-	        return resp
-	    except Exception as exception:
-	        return jsonify(str(exception))
-	
-	@app.route("/update", methods=["POST"])
-	def update_user():
-	    """Function to update a user in the PostgreSQL database"""
-	    json = request.json
-	    name = json["name"]
-	    email = json["email"]
-	    pwd = json["pwd"]
-	    user_id = json["user_id"]
-	    if name and email and pwd and user_id and request.method == 	"POST":
-	        sql = "UPDATE users SET user_name=%s, user_email=%s, " \
-	              "user_password=%s WHERE user_id=%s"
-	        data = (name, email, pwd, user_id)
-	        try:
-	            conn = create_connection()
-	            cursor = conn.cursor()
-	            cursor.execute(sql, data)
-	            conn.commit()
-	            cursor.close()
-	            conn.close()
-	            resp = jsonify("User updated successfully!")
-	            resp.status_code = 200
-	            return resp
-	        except Exception as exception:
-	            return jsonify(str(exception))
-	    else:
-	        return jsonify("Please provide id, name, email and pwd")
-	
-	@app.route("/delete/<int:user_id>")
-	def delete_user(user_id):
-	    """Function to delete a user from the PostgreSQL database"""
-	    try:
-	        conn = get_db_connection()
-	        cursor = conn.cursor()
-	        cursor.execute("DELETE FROM users WHERE user_id=%s", (user_	id,))
-	        conn.commit()
-	        cursor.close()
-	        conn.close()
-	        resp = jsonify("User deleted successfully!")
-	        resp.status_code = 200
-	        return resp
-	    except Exception as exception:
-	        return jsonify(str(exception))
-	
-	if __name__ == "__main__":
-	    app.run(host="0.0.0.0", port=5000)
-
-### Create requirements.txt
-
-	nano requirements.txt
-
-	Flask==1.0.3  
-	Flask-MySQL==1.4.0  
-	PyMySQL==0.9.3
-	uWSGI==2.0.17.1
-	mysql-connector-python
-	cryptography
-	psycopg2-binary==2.9.1
-
-### Build the Dockerfile:
-
-	docker build . -t flask-api
-
-## Deploying the cluster
-
-	kubectl apply -f flask-service.yaml
-	kubectl apply -f flask-deployment.yaml
-
-## Expose the API
-
-The API can be accessed by exposing it using minikube: 
-
-	minikube service flask-service
-
-This will return a URL. If you paste this to your browser you will see the hello world message. You can use this service_URL to make requests to the API
-
-### Now you can use the API to CRUD your database
-
-#### add a user:
-
-	curl -H "Content-Type: application/json" -d '{"name": "<user_name>", "email": "<user_email>", "pwd": "<user_password>"}' <service_URL>/create
-
-#### get all users:
-
-	curl <service_URL>/users
-
-#### get information of a specific user:
-
-	curl <service_URL>/user/<user_id>
-
-#### delete a user by user_id:
-
-	curl -H "Content-Type: application/json" <service_URL>/delete/<user_id>
-
-#### update a user's information:
-
-	curl -H "Content-Type: application/json" -d {"name": "<user_name>", "email": "<user_email>", "pwd": "<user_password>", "user_id": <user_id>} <service_URL>/update
-
-## Ingress configuration;
-
-### Enable the Ingress controller
-
-	minikube addons enable ingress
-
-### Verify that the NGINX Ingress controller is running
-
-	kubectl get pods -n ingress-nginx
-
-### Create an Ingress
-
-	nano flask-ingress.yaml
-
 	apiVersion: networking.k8s.io/v1
+	
 	kind: Ingress
 	metadata:
 	  name: flask-ingress
+	  namespace: default
+	  ## This part is the one responsible for redirecting users to oauth2-proxy
+	  annotations:
+	    nginx.ingress.kubernetes.io/auth-url: "https://$host/oauth2/auth"
+	    nginx.ingress.kubernetes.io/auth-signin: "https://$host/oauth2/start?rd=$escaped_request_uri"
 	spec:
 	  rules:
-	    - host: postgres.api
+	    - host: www.postgres.api
 	      http:
+	      # This is the path that will be used to access the flask app
 	        paths:
 	          - path: /
 	            pathType: Prefix
@@ -461,27 +120,67 @@ This will return a URL. If you paste this to your browser you will see the hello
 	                port:
 	                  number: 5000
 
-### Verify the IP address is set:
+### Kubernetes Secret with a valid SSL certificate
 
-	kubectl get ingress
+To create a Kubernetes Secret with a valid SSL certificate, you will need to obtain the certificate and private key in PEM format, and then create the Secret using the kubectl command-line tool.
 
-You should see an IPv4 address in the ADDRESS column; for example:
+Here are the steps to create a Kubernetes Secret with a valid SSL certificate:
 
-	NAME            CLASS   HOSTS          ADDRESS        PORTS   AGE
-	flask-ingress   nginx   postgres.api   192.168.49.2   80      59m
+#### Obtain the certificate and private key in PEM format. You can get these from a certificate authority (CA), or by generating a self-signed certificate.
 
-### Add the following line to the bottom of the /etc/hosts file on your computer (you will need administrator access):
+#### Create a Kubernetes Secret with the certificate and private key using the kubectl create secret tls command. The tls type of secret is used for SSL certificates. The syntax for the command is as follows:
 
-	192.168.49.2	postgres.api
+	kubectl create secret tls <secret-name> --cert=<path-to-certificate-file> --key=<path-to-private-key-file>
 
-### Verify that the Ingress controller is directing traffic:
+Replace <secret-name> with a unique name for your Secret, <path-to-certificate-file> with the path to the PEM-encoded certificate file, and <path-to-private-key-file> with the path to the PEM-encoded private key file.
 
-	curl postgres.api
+For example, if your certificate and private key files are named mycert.pem and mykey.pem, and you want to create a Secret named my-secret, you would run the following command:
+
+	kubectl create secret tls my-secret --cert=mycert.pem --key=mykey.pem
+
+#### Verify that the Secret was created successfully using the kubectl describe secret command:
+
+	kubectl describe secret <secret-name>
+
+Replace <secret-name> with the name of your Secret. The output should show the details of the Secret, including the certificate and private key.
+
+That's it! You now have a Kubernetes Secret with a valid SSL certificate that can be used for TLS termination in an Ingress or other Kubernetes resource.
+
+### oauth2-ingress.yaml:
+
+	---
+	
+	apiVersion: networking.k8s.io/v1
+	kind: Ingress
+	metadata:
+	  name: oauth2-proxy
+	  namespace: kube-system
+	spec:
+	  ingressClassName: nginx
+	  rules:
+	  - host: www.postgres.api
+	    http:
+	    ## This is the path that will be protected by oauth2-proxy
+	      paths:
+	      - path: /oauth2
+	        pathType: Prefix
+	        backend:
+	          service:
+	            name: oauth2-proxy
+	            port:
+	              number: 4180
+	  tls:
+	  - hosts:
+	    - www.postgres.api
+	    secretName: tls-secret
+
+## Deploy the oauth2 proxy and the igress rules:
+
+	kubectl create -f oauth2-proxy.yaml
+	kubectl create -f application-ingress.yaml
 
 ## References
 
-+ [RikKraanVatage GitHub Repo](https://github.com/RikKraanVantage/kubernetes-flask-mysql)
-+ [Theo Despoudis Article](https://sweetcode.io/how-to-use-kubernetes-to-deploy-postgres/)
-+ [Rik Kraan Article](https://www.kdnuggets.com/2021/02/deploy-flask-api-kubernetes-connect-micro-services.html)
-+ [Forketyfork](https://medium.com/swlh/how-to-run-locally-built-docker-images-in-kubernetes-b28fbc32cc1d)
-+ [Kubernetes Documentation](https://kubernetes.io/docs/home/)
+[Nginx Ingress External OAUTH](https://kubernetes.github.io/ingress-nginx/examples/auth/oauth-external-auth/)
+[Oauth2-Proxy Issue](https://github.com/oauth2-proxy/oauth2-proxy/issues/1669)
+
