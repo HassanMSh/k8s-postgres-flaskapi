@@ -1,0 +1,25 @@
+---
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: oauth2-proxy
+  namespace: kube-system
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: www.postgres.api
+    http:
+    ## This is the callback URL that the OAuth provider will redirect to after the user has authenticated
+      paths:
+      - path: /oauth2
+        pathType: Prefix
+        backend:
+          service:
+            name: oauth2-proxy
+            port:
+              number: 4180
+  tls:
+  - hosts:
+    - www.postgres.api
+    secretName: tls-secret
