@@ -3,6 +3,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: postgres
+  namespace: api
   labels:
     app: postgres
 spec:
@@ -26,6 +27,8 @@ spec:
           ports:
             - containerPort: 5432
           env:
+            - name: POSTGRES_HOST_AUTH_METHOD
+              value: trust
             - name: postgres-secret-config
               valueFrom:
                 secretKeyRef:
